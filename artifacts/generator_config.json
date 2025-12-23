@@ -1,0 +1,398 @@
+{
+  "tables": {
+    "Customer": {
+      "primary_key": "customer_id",
+      "fields": {
+        "customer_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "first_name": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "last_name": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "date_of_birth": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "email": {
+          "type": "STRING",
+          "required": false,
+          "allowed_values": null
+        },
+        "created_at": {
+          "type": "TIMESTAMP",
+          "required": true,
+          "allowed_values": null
+        },
+        "kyc_status": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "PENDING",
+            "VERIFIED",
+            "REJECTED"
+          ]
+        }
+      }
+    },
+    "Branch": {
+      "primary_key": "branch_id",
+      "fields": {
+        "branch_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "branch_name": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "city": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "country": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        }
+      }
+    },
+    "Account": {
+      "primary_key": "account_id",
+      "fields": {
+        "account_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "customer_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "branch_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "account_type": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "SAVINGS",
+            "CHECKING",
+            "CREDIT",
+            "LOAN"
+          ]
+        },
+        "currency": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "opened_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "status": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "ACTIVE",
+            "BLOCKED",
+            "CLOSED"
+          ]
+        },
+        "current_balance": {
+          "type": "DECIMAL",
+          "required": true,
+          "allowed_values": null
+        }
+      }
+    },
+    "Card": {
+      "primary_key": "card_id",
+      "fields": {
+        "card_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "account_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "card_number": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "card_type": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "DEBIT",
+            "CREDIT"
+          ]
+        },
+        "issued_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "expiry_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "status": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "ACTIVE",
+            "BLOCKED",
+            "EXPIRED"
+          ]
+        }
+      }
+    },
+    "Merchant": {
+      "primary_key": "merchant_id",
+      "fields": {
+        "merchant_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "merchant_name": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "category": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "country": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        }
+      }
+    },
+    "Transaction": {
+      "primary_key": "txn_id",
+      "fields": {
+        "txn_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "account_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "card_id": {
+          "type": "STRING",
+          "required": false,
+          "allowed_values": null
+        },
+        "merchant_id": {
+          "type": "STRING",
+          "required": false,
+          "allowed_values": null
+        },
+        "txn_timestamp": {
+          "type": "TIMESTAMP",
+          "required": true,
+          "allowed_values": null
+        },
+        "amount": {
+          "type": "DECIMAL",
+          "required": true,
+          "allowed_values": null
+        },
+        "currency": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "txn_type": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "DEBIT",
+            "CREDIT",
+            "REFUND",
+            "FEE"
+          ]
+        },
+        "status": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "PENDING",
+            "POSTED",
+            "REVERSED",
+            "DECLINED"
+          ]
+        }
+      }
+    },
+    "Loan": {
+      "primary_key": "loan_id",
+      "fields": {
+        "loan_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "customer_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "account_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "principal_amount": {
+          "type": "DECIMAL",
+          "required": true,
+          "allowed_values": null
+        },
+        "interest_rate": {
+          "type": "DECIMAL",
+          "required": true,
+          "allowed_values": null
+        },
+        "start_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "end_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "status": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "ACTIVE",
+            "CLOSED",
+            "DEFAULTED"
+          ]
+        }
+      }
+    },
+    "LoanPayment": {
+      "primary_key": "payment_id",
+      "fields": {
+        "payment_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "loan_id": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": null
+        },
+        "payment_date": {
+          "type": "DATE",
+          "required": true,
+          "allowed_values": null
+        },
+        "amount": {
+          "type": "DECIMAL",
+          "required": true,
+          "allowed_values": null
+        },
+        "method": {
+          "type": "STRING",
+          "required": true,
+          "allowed_values": [
+            "TRANSFER",
+            "CASH",
+            "CARD"
+          ]
+        }
+      }
+    }
+  },
+  "relationships": [
+    {
+      "parent_table": "Customer",
+      "parent_key": "customer_id",
+      "child_table": "Account",
+      "child_key": "customer_id"
+    },
+    {
+      "parent_table": "Branch",
+      "parent_key": "branch_id",
+      "child_table": "Account",
+      "child_key": "branch_id"
+    },
+    {
+      "parent_table": "Account",
+      "parent_key": "account_id",
+      "child_table": "Card",
+      "child_key": "account_id"
+    },
+    {
+      "parent_table": "Account",
+      "parent_key": "account_id",
+      "child_table": "Transaction",
+      "child_key": "account_id"
+    },
+    {
+      "parent_table": "Card",
+      "parent_key": "card_id",
+      "child_table": "Transaction",
+      "child_key": "card_id"
+    },
+    {
+      "parent_table": "Merchant",
+      "parent_key": "merchant_id",
+      "child_table": "Transaction",
+      "child_key": "merchant_id"
+    },
+    {
+      "parent_table": "Customer",
+      "parent_key": "customer_id",
+      "child_table": "Loan",
+      "child_key": "customer_id"
+    },
+    {
+      "parent_table": "Account",
+      "parent_key": "account_id",
+      "child_table": "Loan",
+      "child_key": "account_id"
+    },
+    {
+      "parent_table": "Loan",
+      "parent_key": "loan_id",
+      "child_table": "LoanPayment",
+      "child_key": "loan_id"
+    }
+  ]
+}

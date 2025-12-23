@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: finance-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: finance_synth
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  sdk:
+    build: .
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: finance_synth
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    # Run full pipeline; override --rows from compose or CLI
+    command: [
+      "pipeline",
+      "--edl-path","edl/finance_schema.edl",
+      "--config-out","artifacts/generator_config.json",
+      "--rows","1000",
+      "--db-host","postgres",
+      "--db-port","5432",
+      "--db-name","finance_synth",
+      "--db-user","postgres",
+      "--db-password","postgres"
+    ]
+
+volumes:
+  pgdata:
