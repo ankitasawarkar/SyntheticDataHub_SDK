@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+
 @dataclass
 class FieldMeta:
     name: str
@@ -11,11 +12,13 @@ class FieldMeta:
     required: bool = False
     allowed_values: Optional[List[str]] = None
 
+
 @dataclass
 class TableMeta:
     name: str
     fields: Dict[str, FieldMeta] = field(default_factory=dict)
     primary_key: Optional[str] = None
+
 
 @dataclass
 class RelationshipMeta:
@@ -24,6 +27,7 @@ class RelationshipMeta:
     child_table: str
     child_key: str
     cardinality: str
+
 
 @dataclass
 class SchemaMeta:

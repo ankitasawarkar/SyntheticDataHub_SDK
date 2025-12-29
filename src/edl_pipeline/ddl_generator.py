@@ -1,5 +1,7 @@
-from metadata_model import SchemaMeta, FieldMeta
 from typing import Dict
+
+from .metadata_model import SchemaMeta, FieldMeta
+
 
 def map_type(field: FieldMeta) -> str:
     t = field.type.upper()
@@ -22,11 +24,11 @@ def map_type(field: FieldMeta) -> str:
         prec = field.precision or 18
         scale = field.scale or 2
         return f"DECIMAL({prec},{scale})"
-    # default
     return "TEXT"
 
+
 def generate_ddl(schema: SchemaMeta) -> Dict[str, str]:
-    ddls = {}
+    ddls: Dict[str, str] = {}
     for table_name, table in schema.tables.items():
         cols_sql = []
         for field in table.fields.values():
@@ -42,8 +44,9 @@ def generate_ddl(schema: SchemaMeta) -> Dict[str, str]:
         ddls[table_name] = table_sql
     return ddls
 
+
 def generate_fk_constraints(schema: SchemaMeta) -> Dict[str, str]:
-    fk_ddls = {}
+    fk_ddls: Dict[str, str] = {}
     for rel in schema.relationships:
         name = f"fk_{rel.child_table.lower()}_{rel.child_key.lower()}"
         sql = (

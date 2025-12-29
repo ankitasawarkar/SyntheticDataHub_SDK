@@ -1,13 +1,10 @@
 import re
 from typing import List, Tuple
-from metadata_model import SchemaMeta, TableMeta, FieldMeta, RelationshipMeta
+from .metadata_model import SchemaMeta, TableMeta, FieldMeta, RelationshipMeta
+
 
 def _find_blocks(text: str, header_pattern: str) -> List[Tuple[str, str]]:
-    """
-    Find blocks like 'ENTITY Name { ... }' or 'RELATIONSHIP Name { ... }' by
-    matching header and then using brace counting to extract balanced content.
-    Returns list of (name, body_text).
-    """
+    """Find blocks like 'ENTITY Name { ... }' or 'RELATIONSHIP Name { ... }'."""
     blocks = []
     for m in re.finditer(header_pattern, text):
         name = m.group(1)
@@ -23,11 +20,12 @@ def _find_blocks(text: str, header_pattern: str) -> List[Tuple[str, str]]:
             elif ch == '}':
                 depth -= 1
                 if depth == 0:
-                    body = text[start_brace + 1:i]
+                    body = text[start_brace + 1 : i]
                     blocks.append((name, body))
                     break
             i += 1
     return blocks
+
 
 def parse_edl(edl_path: str) -> SchemaMeta:
     with open(edl_path, "r") as f:
@@ -35,15 +33,12 @@ def parse_edl(edl_path: str) -> SchemaMeta:
 
     schema = SchemaMeta()
 
-    # Balanced parsing for entity blocks (handles nested ATTRIBUTE {...})
     entity_blocks = _find_blocks(text, r"\bENTITY\s+(\w+)\s*{")
-    # Relationships have simple bodies; regex is fine, but we reuse the same method for consistency
     rel_blocks = _find_blocks(text, r"\bRELATIONSHIP\s+(\w+)\s*{")
 
     for entity_name, body in entity_blocks:
         table = TableMeta(name=entity_name)
 
-        # Extract ATTRIBUTE blocks within the entity body
         attr_blocks = re.findall(r"ATTRIBUTE\s+(\w+)\s*{(.*?)}", body, re.S)
         for attr_name, attr_body in attr_blocks:
             type_match = re.search(r"TYPE\s*=\s*(\w+)", attr_body)
@@ -71,7 +66,7 @@ def parse_edl(edl_path: str) -> SchemaMeta:
                 precision=prec,
                 scale=scale,
                 required=required,
-                allowed_values=allowed_values
+                allowed_values=allowed_values,
             )
             table.fields[attr_name] = field
 
@@ -91,7 +86,7 @@ def parse_edl(edl_path: str) -> SchemaMeta:
             parent_key=parent.group(2),
             child_table=child.group(1),
             child_key=child.group(2),
-            cardinality=card.group(1) if card else "UNKNOWN"
+            cardinality=card.group(1) if card else "UNKNOWN",
         )
         schema.relationships.append(rel)
 

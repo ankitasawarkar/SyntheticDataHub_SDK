@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 import pandas as pd
 from sqlalchemy import create_engine, text
 
@@ -9,7 +9,8 @@ def write_to_postgres(data: Dict[str, pd.DataFrame],
                       db="finance_synth",
                       user="postgres",
                       password="postgres",
-                      append: bool = False):
+                      append: bool = False,
+                      schema: Optional[str] = None):
     """Write generated dataframes to Postgres.
 
     The current behavior is to fully refresh the target tables
@@ -26,14 +27,20 @@ def write_to_postgres(data: Dict[str, pd.DataFrame],
     # In append mode, keep existing data and identities.
     table_names = list(data.keys())
     if table_names and not append:
-        quoted = ", ".join(f'"{name}"' for name in table_names)
+        if schema:
+            quoted = ", ".join(f'"{schema}"."{name}"' for name in table_names)
+        else:
+            quoted = ", ".join(f'"{name}"' for name in table_names)
         truncate_sql = f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"
         print(f"[db_writer] Truncating tables before load: {quoted}")
         with engine.begin() as conn:
             conn.execute(text(truncate_sql))
     elif table_names and append:
-        quoted = ", ".join(f'"{name}"' for name in table_names)
+        if schema:
+            quoted = ", ".join(f'"{schema}"."{name}"' for name in table_names)
+        else:
+            quoted = ", ".join(f'"{name}"' for name in table_names)
         print(f"[db_writer] Append mode: NOT truncating tables {quoted}")
 
     for table, df in data.items():
-        df.to_sql(table, engine, if_exists="append", index=False)
+        df.to_sql(table, engine, if_exists="append", index=False, schema=schema)

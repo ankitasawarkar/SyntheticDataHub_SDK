@@ -11,7 +11,7 @@ This project is a small SDK + CLI for generating realistic synthetic banking dat
 
 ### How the data model is defined
 
-- An EDL file (`edl/finance_schema.edl`) defines tables, fields, primary keys, and foreign keys.
+- An EDL file (`edl/edl_schema.edl`) defines tables, fields, primary keys, and foreign keys.
 - The SDK parses this EDL into an in-memory metadata model and then:
   - Generates SQL DDL to create tables and constraints in Postgres.
   - Builds a JSON generator config with rules for synthesizing each column.

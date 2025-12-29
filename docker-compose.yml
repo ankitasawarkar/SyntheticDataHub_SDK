@@ -24,7 +24,7 @@ services:
     # Run full pipeline; override --rows from compose or CLI
     command: [
       "pipeline",
-      "--edl-path","edl/finance_schema.edl",
+      "--edl-path","edl/edl_schema.edl",
       "--config-out","artifacts/generator_config.json",
       "--rows","1000",
       "--db-host","postgres",

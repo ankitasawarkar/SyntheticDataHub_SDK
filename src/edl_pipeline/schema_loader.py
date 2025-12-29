@@ -1,24 +1,26 @@
 import time
+
 import psycopg2
 from psycopg2 import OperationalError
-from metadata_model import SchemaMeta
-from ddl_generator import generate_ddl, generate_fk_constraints
 
-def load_schema_to_postgres(schema: SchemaMeta,
-                            host="localhost",
-                            port=5432,
-                            db="finance_synth",
-                            user="postgres",
-                            password="postgres"):
-    # Wait for Postgres to be ready (useful when running in Docker)
+from .metadata_model import SchemaMeta
+from .ddl_generator import generate_ddl, generate_fk_constraints
+
+
+def load_schema_to_postgres(
+    schema: SchemaMeta,
+    host: str = "localhost",
+    port: int = 5432,
+    db: str = "finance_synth",
+    user: str = "postgres",
+    password: str = "postgres",
+) -> None:
     max_attempts = 10
     delay_seconds = 3
     for attempt in range(1, max_attempts + 1):
         try:
             print(f"[schema_loader] Connecting to Postgres (attempt {attempt}/{max_attempts})...")
-            conn = psycopg2.connect(
-                host=host, port=port, dbname=db, user=user, password=password
-            )
+            conn = psycopg2.connect(host=host, port=port, dbname=db, user=user, password=password)
             break
         except OperationalError as exc:
             if attempt == max_attempts:
@@ -39,7 +41,6 @@ def load_schema_to_postgres(schema: SchemaMeta,
         try:
             cur.execute(sql)
         except psycopg2.Error:
-            # e.g., if FK already exists in reruns
             pass
 
     cur.close()
