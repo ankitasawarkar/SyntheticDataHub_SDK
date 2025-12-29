@@ -3,3 +3,4 @@ SQLAlchemy
 pandas
 faker
 click
+requests

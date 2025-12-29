@@ -126,3 +126,28 @@ This runs:
 - `validation.py`
 
 Result: PK/FK and basic data quality report.
+
+---
+
+## NeMo Data Designer troubleshooting
+
+If you are using the NeMo-backed EDL pipeline (`edl_nemo`), these helper scripts can be used to verify that the NeMo service and credentials are working:
+
+- Healthcheck script: `scripts/nemo_healthcheck.sh`
+   - Checks the `/health` endpoint at `${NEMO_BASE_URL:-http://localhost:8000}` and exits with status 0 on success.
+   - Example (from repo root, in Bash / Git Bash / WSL):
+
+      ```bash
+      bash scripts/nemo_healthcheck.sh
+      ```
+
+- Local API test: `scripts/test_nemo_local.py`
+   - Sends a small test `generate` request to `${NEMO_BASE_URL:-http://localhost:8000}/data-designer/v1/generate` using `NEMO_API_KEY` from your environment.
+   - Prints the HTTP status and response body/JSON for quick debugging.
+   - Example:
+
+      ```bash
+      python scripts/test_nemo_local.py
+      ```
+
+Make sure you have `NEMO_BASE_URL` and `NEMO_API_KEY` set in your environment (for example via the `.env` file) before running the NeMo pipelines or these scripts.
