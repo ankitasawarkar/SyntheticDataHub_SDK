@@ -11,16 +11,36 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  nemo-data-designer:
+    image: nvcr.io/nvidia/nemo-microservices/data-designer:latest
+    container_name: nemo-data-designer
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_PORT: 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
   sdk:
     build: .
     depends_on:
       - postgres
+      - nemo-data-designer
+    env_file:
+      - .env
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: finance_synth
       DB_USER: postgres
       DB_PASSWORD: postgres
+      NEMO_BASE_URL: http://nemo-data-designer:8000
     # Run full pipeline; override --rows from compose or CLI
     command: [
       "pipeline",
