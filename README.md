@@ -151,3 +151,13 @@ If you are using the NeMo-backed EDL pipeline (`edl_nemo`), these helper scripts
       ```
 
 Make sure you have `NEMO_BASE_URL` and `NEMO_API_KEY` set in your environment (for example via the `.env` file) before running the NeMo pipelines or these scripts.
+
+### 401 errors when pulling the NeMo container
+
+If `docker compose pull nemo-data-designer` (or `docker pull nvcr.io/nvidia/nemo-microservices/data-designer:...`) fails with a `401 Unauthorized` error, it means Docker does not have permission to access the NeMo image in the NVIDIA registry:
+
+- You need a valid NGC/NVIDIA account with access to the NeMo Data Designer image.
+- Sign in and run `docker login nvcr.io` using your NGC credentials or generated API token.
+- Make sure the image name and tag in `docker-compose.yml` match exactly what your organization or NVIDIA docs specify.
+
+Until the registry authentication and image name are correct, the NeMo container will not start, and all NeMo-based pipelines (`edl_nemo`) will fail with connection errors to `localhost:8000`. Once the image pulls and the container is running and healthy, you can rerun `python test_nemo_local.py` and then the `edl_nemo` pipeline to generate data.
