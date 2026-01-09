@@ -69,9 +69,13 @@ Everything is runnable locally with just Docker + Python.
 
 ### 1. Start Postgres
 
-```bash
+You can either run Postgres locally or use Docker. The easiest is Docker:
 
+```bash
+docker compose up -d postgres
 ```
+
+This starts a Postgres 15 container with database `finance_synth` and user/password `postgres/postgres`.
 
 ### 2. Install dependencies
 
@@ -126,3 +130,46 @@ This runs:
 - `validation.py`
 
 Result: PK/FK and basic data quality report.
+
+---
+
+## Run Everything with Docker
+
+You can also run the full pipeline (schema init + config + generate + load + validate) entirely inside Docker using the provided `docker-compose.yml`.
+
+### 1. Build and start services
+
+```bash
+docker compose up --build
+```
+
+This will:
+- Start a Postgres container (`finance-postgres`) on port `5432`.
+- Build the SDK image from the Dockerfile.
+- Run the `pipeline` CLI subcommand in the `sdk` container with default settings (EDL, config, 1000 rows).
+
+### 2. Check logs
+
+```bash
+docker compose logs -f sdk
+```
+
+You should see logs for schema creation, data generation, inserts, and validation.
+
+### 3. Connect to Postgres from host
+
+With Docker running, you can connect using any Postgres client on your machine:
+
+- Host: `localhost`
+- Port: `5432`
+- Database: `finance_synth`
+- User: `postgres`
+- Password: `postgres`
+
+### 4. Clean up containers and volume
+
+```bash
+docker compose down -v
+```
+
+This stops containers and removes the `pgdata` volume used for Postgres data.
