@@ -1,0 +1,11 @@
+customer_id,first_name,last_name,date_of_birth,email,ssn,marketing_opt_in,loyalty_points,created_at,kyc_status
+CUST001,Alice,Smith,1985-01-15,alice.smith@example.com,123-45-6789,1,1200,2023-01-01 09:00:00,VERIFIED
+CUST002,Bob,Johnson,1978-03-22,bob.johnson@example.com,234-56-7890,0,800,2023-01-02 10:15:00,PENDING
+CUST003,Carol,Williams,1990-07-05,carol.williams@example.com,345-67-8901,1,500,2023-01-03 11:30:00,VERIFIED
+CUST004,David,Brown,1982-11-09,david.brown@example.com,456-78-9012,1,1500,2023-01-04 14:45:00,VERIFIED
+CUST005,Eva,Jones,1995-02-18,eva.jones@example.com,567-89-0123,0,300,2023-01-05 16:00:00,REJECTED
+CUST006,Frank,Miller,1988-04-27,frank.miller@example.com,678-90-1234,1,950,2023-01-06 09:20:00,VERIFIED
+CUST007,Grace,Davis,1975-09-30,grace.davis@example.com,789-01-2345,0,400,2023-01-07 13:10:00,PENDING
+CUST008,Henry,Garcia,1992-12-12,henry.garcia@example.com,890-12-3456,1,1100,2023-01-08 15:25:00,VERIFIED
+CUST009,Irene,Martinez,1983-06-03,irene.martinez@example.com,901-23-4567,1,600,2023-01-09 10:05:00,VERIFIED
+CUST010,Jack,Lopez,1991-08-19,jack.lopez@example.com,012-34-5678,0,200,2023-01-10 11:55:00,PENDING

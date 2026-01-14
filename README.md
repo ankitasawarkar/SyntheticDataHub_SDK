@@ -173,3 +173,37 @@ docker compose down -v
 ```
 
 This stops containers and removes the `pgdata` volume used for Postgres data.
+
+---
+
+## Common Docker Commands (EDL & RDS)
+
+### EDL pipeline (finance EDL)
+
+- Run finance EDL pipeline with defaults (inside Docker network):
+
+   ```bash
+   docker compose run --rm sdk pipeline --rows 1000 --db-host postgres -db-port 5432 --db-name finance_synth --db-user postgres --db-password postgres
+   ```
+
+- Run EDL pipeline with a specific EDL file and append mode:
+
+   ```bash
+   docker compose run --rm sdk pipeline --edl-path edl/edl_schema.edl --config-out artifacts/generator_config.json --rows 1000 --db-host postgres --db-port 5432 --db-name finance_synth --db-user postgres --db-password postgres --append
+   ```
+
+### RDS pipeline (synthetic demo RDS)
+
+- Run RDS pipeline with default schema SQL (`artifacts/rds_schema.sql`):
+
+   ```bash
+   docker compose run --rm sdk pipeline-rds --rows 1000 --db-host postgres --db-port 5432 --db-name finance_synth --db-user postgres --db-password postgres --append
+   ```
+
+- Run synthetic_demo RDS pipeline with explicit SQL path:
+
+   ```bash
+   docker compose run --rm sdk pipeline-rds --rows 1000 --db-host postgres --db-port 5432 --db-name finance_synth --db-user postgres --db-password postgres --sql-path artifacts/synthetic_demo_schema.sql
+   ```
+
+Inside these commands, `--db-host postgres` refers to the Postgres service defined in `docker-compose.yml`.

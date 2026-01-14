@@ -1,0 +1,11 @@
+merchant_id,merchant_name,category,country
+M001,BlueMart,GROCERY,USA
+M002,TechWorld,ELECTRONICS,USA
+M003,Cafe Central,RESTAURANT,UK
+M004,TravelNow,TRAVEL,UK
+M005,StyleHub,CLOTHING,Australia
+M006,BookCorner,BOOKSTORE,Singapore
+M007,PetPal,PET_STORE,USA
+M008,FuelPlus,GAS_STATION,Czech Republic
+M009,HealthFirst,PHARMACY,USA
+M010,HomeDecor,HOME_GOODS,China

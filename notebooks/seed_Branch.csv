@@ -1,0 +1,11 @@
+branch_id,branch_name,city,country,employee_count
+BR001,Downtown Branch,New York,USA,120
+BR002,Midtown Branch,New York,USA,85
+BR003,Lakeside Branch,Chicago,USA,60
+BR004,Riverside Branch,Chicago,USA,45
+BR005,Central Branch,London,UK,150
+BR006,West End Branch,London,UK,70
+BR007,Harbor Branch,Sydney,Australia,55
+BR008,City Center Branch,Singapore,Singapore,65
+BR009,Old Town Branch,Prague,Czech Republic,40
+BR010,Financial District Branch,Hong Kong,China,90
