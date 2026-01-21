@@ -1,0 +1,18 @@
+# Ignore everything by default
+*
+
+# But keep git internals
+!.gitignore
+!.git/
+
+# Keep source code
+!/src/
+!/requirements.txt
+!/Dockerfile    
+!/docker-compose.yml
+!/README.md
+!/.env
+
+# Keep key notebooks at repo root
+!/synthetic_data_with_sample_data.ipynb
+!/synthetic_postgress.ipynb
