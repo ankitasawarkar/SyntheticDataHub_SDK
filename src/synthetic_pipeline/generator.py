@@ -1,0 +1,332 @@
+from typing import Dict, Any, List, Optional
+import random
+from decimal import Decimal
+import uuid
+
+from faker import Faker
+
+
+fake = Faker()
+
+
+def _table_id(t: Dict[str, Any]) -> str:
+    return f"{t['schema']}.{t['table']}"
+
+
+def _generate_scalar_value(col: Dict[str, Any], stats: Optional[Dict[str, Any]] = None) -> Any:
+    """Generate a single scalar value for a column using Faker + simple heuristics.
+
+    Uses optional stats from profiling to stay within realistic ranges, and respects
+    numeric precision/scale for numeric/decimal types.
+    """
+    name = col["name"].lower()
+    data_type = (col["data_type"] or "").lower()
+    udt_name = (col["udt_name"] or "").lower()
+    max_len = col.get("max_length") or 64
+
+    # Occasionally emit NULL for nullable columns
+    if col.get("is_nullable") and random.random() < 0.05:
+        return None
+
+    # UUID columns: always generate a UUID, ignore stats
+    if data_type == "uuid" or udt_name == "uuid":
+        return str(uuid.uuid4())
+
+    # If we have profiling stats, try to use them first, but only in a
+    # type-consistent way so we don't violate column types.
+    if stats:
+        kind = stats.get("kind")
+
+        if kind == "numeric" and (
+            data_type
+            in (
+                "integer",
+                "bigint",
+                "smallint",
+                "numeric",
+                "decimal",
+                "double precision",
+                "real",
+            )
+            or udt_name in ("int2", "int4", "int8", "numeric", "float4", "float8")
+        ):
+            lo = stats.get("min")
+            hi = stats.get("max")
+            if lo is not None and hi is not None and lo <= hi:
+                return fake.pyint(min_value=int(lo), max_value=int(hi))
+
+        if kind == "datetime" and (
+            data_type
+            in (
+                "date",
+                "timestamp without time zone",
+                "timestamp with time zone",
+            )
+            or "timestamp" in udt_name
+            or udt_name == "date"
+        ):
+            return fake.date_time_between(start_date="-5y", end_date="now")
+
+        if kind == "categorical":
+            values = stats.get("values") or []
+            if values:
+                population = [v["value"] for v in values]
+                weights = [v.get("freq", 1) for v in values]
+                return random.choices(population, weights=weights, k=1)[0]
+
+        if kind == "text" and (
+            "character" in data_type
+            or "text" in data_type
+            or udt_name == "text"
+        ):
+            min_l = stats.get("min_length") or 1
+            max_l = stats.get("max_length") or max_len
+            if max_l < 1:
+                max_l = max_len
+            if min_l < 1:
+                min_l = 1
+            if max_l < min_l:
+                max_l = min_l
+            length = random.randint(min_l, max_l)
+            requested = max(length, 5)
+            txt = fake.text(max_nb_chars=requested)
+            return txt[:length]
+
+    # String-ish helpers for default path
+    def _limited_text(n: int) -> str:
+        requested = max(n, 5)
+        txt = fake.text(max_nb_chars=requested)
+        return txt[:n]
+
+    # Name / email / phone based on column name
+    if "email" in name:
+        return fake.email()
+    if "first_name" in name:
+        return fake.first_name()
+    if "last_name" in name:
+        return fake.last_name()
+    if "full_name" in name or name == "name":
+        return fake.name()
+    if "phone" in name or "mobile" in name:
+        return fake.phone_number()
+    if "city" in name:
+        return fake.city()
+    if "country" in name:
+        return fake.country()
+    if "postcode" in name or "zipcode" in name or "zip" == name:
+        return fake.postcode()
+
+    # Date / time
+    if "timestamp" in data_type or "timestamp" in udt_name:
+        return fake.date_time_between(start_date="-5y", end_date="now")
+    if data_type in ("date",) or udt_name in ("date",):
+        return fake.date_between(start_date="-5y", end_date="today")
+
+    # Boolean
+    if data_type in ("boolean",) or udt_name in ("bool",):
+        return fake.pybool()
+
+    # Numeric integer types
+    if data_type in ("integer", "bigint", "smallint") or udt_name in ("int2", "int4", "int8"):
+        # Respect smallint range; use a larger range for int/bigint
+        if data_type == "smallint" or udt_name == "int2":
+            max_val = 32_767
+        else:
+            max_val = 1_000_000
+
+        return fake.pyint(min_value=0, max_value=max_val)
+
+    # Floating-point types (double precision, real)
+    if data_type in ("double precision", "real") or udt_name in ("float4", "float8"):
+        if any(k in name for k in ["amount", "price", "total", "balance"]):
+            return fake.pyfloat(min_value=0, max_value=1_000_000)
+        return fake.pyfloat(min_value=0, max_value=1_000_000)
+
+    # Numeric/decimal with precision/scale respected
+    if data_type in ("numeric", "decimal") or udt_name in ("numeric",):
+        precision = col.get("numeric_precision")
+        scale = col.get("numeric_scale")
+        if not isinstance(precision, int) or precision <= 0:
+            scale = scale if isinstance(scale, int) and scale >= 0 else 2
+            return fake.pydecimal(left_digits=10, right_digits=scale, positive=True)
+        if not isinstance(scale, int) or scale < 0:
+            scale = 0
+        if scale >= precision:
+            return fake.pyint(min_value=0, max_value=10**precision - 1)
+        left_digits = max(1, precision - scale)
+        d = fake.pydecimal(left_digits=left_digits, right_digits=scale, positive=True)
+        max_abs = Decimal(10) ** Decimal(precision - scale)
+        if d >= max_abs:
+            d = max_abs - (Decimal(1) / (Decimal(10) ** scale))
+        return d
+
+    # Text / varchar
+    if any(t in data_type for t in ("character varying", "varchar", "character", "text")) or udt_name in (
+        "text",
+    ):
+        n = max_len if isinstance(max_len, int) and max_len > 0 else 128
+        if any(k in name for k in ["desc", "description", "comment"]):
+            return _limited_text(min(n, 200))
+        return _limited_text(n)
+
+    # Fallback: generic string
+    return _limited_text(min(max_len, 64) if isinstance(max_len, int) and max_len > 0 else 64)
+
+
+def generate_synthetic_dataset(
+    db_schema_list: List[Dict[str, Any]],
+    rows_per_table: int = 100,
+    rows_per_table_override: Optional[Dict[str, int]] = None,
+    seed: Optional[int] = None,
+    column_profiles: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Generate synthetic rows in memory for all tables in db_schema_list.
+
+    - Uses FK metadata so child rows always reference valid parent rows.
+    - Generates integer PKs when possible.
+    - Enforces uniqueness for PK and UNIQUE columns.
+    """
+    from .ordering import plan_table_order
+
+    if seed is not None:
+        random.seed(seed)
+        Faker.seed(seed)
+
+    ordered_tables = plan_table_order(db_schema_list)
+    generated: Dict[str, List[Dict[str, Any]]] = {}
+    pk_counters: Dict[str, Dict[str, int]] = {}
+
+    pk_cols_map: Dict[str, List[str]] = {}
+    fk_map: Dict[str, List[Dict[str, Any]]] = {}
+    cols_map: Dict[str, List[Dict[str, Any]]] = {}
+    unique_cols_map: Dict[str, set] = {}
+
+    for t in db_schema_list:
+        tid = _table_id(t)
+        pk_cols: List[str] = []
+        for pk in t["constraints"].get("primary_keys", []):
+            pk_cols.extend(pk["columns"])
+        pk_cols_map[tid] = pk_cols
+        fk_map[tid] = t["constraints"].get("foreign_keys", [])
+        cols_map[tid] = t["columns"]
+        unique_cols = set(pk_cols)
+        for uq in t["constraints"].get("uniques", []):
+            for c in uq.get("columns", []):
+                unique_cols.add(c)
+        unique_cols_map[tid] = unique_cols
+
+    used_unique_values: Dict[str, Dict[str, set]] = {}
+
+    for t in ordered_tables:
+        tid = _table_id(t)
+        table_rows: List[Dict[str, Any]] = []
+        generated[tid] = table_rows
+        pk_counters.setdefault(tid, {})
+        used_unique_values.setdefault(tid, {})
+        table_unique_cols = unique_cols_map.get(tid, set())
+
+        n_rows = rows_per_table
+        if rows_per_table_override and tid in rows_per_table_override:
+            n_rows = rows_per_table_override[tid]
+
+        table_pk_cols = pk_cols_map.get(tid, [])
+        table_fk_constraints = fk_map.get(tid, [])
+        table_cols = cols_map[tid]
+
+        for _ in range(n_rows):
+            row: Dict[str, Any] = {}
+
+            # Foreign keys
+            for fk in table_fk_constraints:
+                parent_tid = f"{fk['references']['schema']}.{fk['references']['table']}"
+                parent_rows = generated.get(parent_tid) or []
+                if not parent_rows:
+                    continue
+                parent_row = random.choice(parent_rows)
+                for child_col, parent_col in zip(
+                    fk["columns"], fk["references"]["columns"]
+                ):
+                    row[child_col] = parent_row[parent_col]
+
+            for col in table_cols:
+                cname = col["name"]
+                if cname in row:
+                    continue
+
+                data_type = (col.get("data_type") or "").lower()
+                udt_name = (col.get("udt_name") or "").lower()
+
+                # Integer primary-key columns: assign deterministic sequential IDs
+                # per table/column. This guarantees uniqueness for integer PKs.
+                if cname in table_pk_cols and data_type in (
+                    "integer",
+                    "bigint",
+                    "smallint",
+                ):
+                    c = pk_counters[tid].get(cname, 0) + 1
+                    pk_counters[tid][cname] = c
+                    row[cname] = c
+                    if cname in table_unique_cols:
+                        used_for_table = used_unique_values[tid].setdefault(cname, set())
+                        used_for_table.add(c)
+                    continue
+
+                # Text/varchar primary-key columns: generate a deterministic
+                # pattern-based ID instead of free-text Faker output. This avoids
+                # rare PK collisions such as "Purpose brother." for columns like
+                # branch_id, customer_id, etc.
+                if cname in table_pk_cols and (
+                    "char" in data_type
+                    or "text" in data_type
+                    or udt_name == "text"
+                ):
+                    c = pk_counters[tid].get(cname, 0) + 1
+                    pk_counters[tid][cname] = c
+                    base = cname.upper()[:10] or "COL"
+                    value = f"{base}_{c:06d}"
+                    max_l = col.get("max_length")
+                    if isinstance(max_l, int) and max_l > 0:
+                        value = value[:max_l]
+                    row[cname] = value
+                    used_for_table = used_unique_values[tid].setdefault(cname, set())
+                    used_for_table.add(value)
+                    continue
+
+                col_stats = None
+                if column_profiles and tid in column_profiles and cname not in table_unique_cols:
+                    col_stats = column_profiles[tid].get(cname)
+
+                value = _generate_scalar_value(col, stats=col_stats)
+
+                if cname in table_unique_cols:
+                    used_for_table = used_unique_values[tid].setdefault(cname, set())
+                    attempts = 0
+                    max_attempts = 10
+                    while (value is None or value in used_for_table) and attempts < max_attempts:
+                        value = _generate_scalar_value(col, stats=None)
+                        attempts += 1
+
+                    if value is None or value in used_for_table:
+                        data_type = (col.get("data_type") or "").lower()
+                        udt = (col.get("udt_name") or "").lower()
+                        suffix = len(used_for_table) + 1
+                        if data_type in ("integer", "bigint", "smallint") or udt in (
+                            "int2",
+                            "int4",
+                            "int8",
+                        ):
+                            value = suffix
+                        else:
+                            base = cname.upper()[:10] or "COL"
+                            value = f"{base}_{suffix:06d}"
+                            max_l = col.get("max_length")
+                            if isinstance(max_l, int) and max_l > 0:
+                                value = value[:max_l]
+
+                    used_for_table.add(value)
+
+                row[cname] = value
+
+            table_rows.append(row)
+
+    return generated

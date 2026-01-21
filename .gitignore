@@ -5,8 +5,9 @@
 !.gitignore
 !.git/
 
-# Keep source code
+# Keep source code (entire src tree)
 !/src/
+!/src/**
 !/requirements.txt
 !/Dockerfile    
 !/docker-compose.yml
