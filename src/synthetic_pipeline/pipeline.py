@@ -138,18 +138,31 @@ def run_synthetic_pipeline_batched(
     # Track which columns must be unique (PK + UNIQUE constraints) per table,
     # and the set of values already used for those columns across all batches.
     unique_cols_map: Dict[str, set] = {}
+    unique_tuple_constraints: Dict[str, List[Dict[str, Any]]] = {}
     for _t in db_schema_list:
         _tid = _table_id(_t)
         _pk_cols: List[str] = []
         for _pk in _t["constraints"].get("primary_keys", []):
             _pk_cols.extend(_pk["columns"])
         _unique_cols = set(_pk_cols)
+
+        tuple_constraints: List[Dict[str, Any]] = []
+        for _pk in _t["constraints"].get("primary_keys", []):
+            cols = list(_pk.get("columns", []))
+            if cols:
+                tuple_constraints.append({"name": _pk.get("name") or "pk", "columns": cols})
         for _uq in _t["constraints"].get("uniques", []):
-            for _c in _uq.get("columns", []):
+            cols = list(_uq.get("columns", []))
+            for _c in cols:
                 _unique_cols.add(_c)
+            if cols:
+                tuple_constraints.append({"name": _uq.get("name") or "uniq", "columns": cols})
+
         unique_cols_map[_tid] = _unique_cols
+        unique_tuple_constraints[_tid] = tuple_constraints
 
     used_unique_values: Dict[str, Dict[str, set]] = {}
+    used_unique_tuples: Dict[str, Dict[str, set]] = {}
 
     from .generator import _generate_scalar_value
 
@@ -165,6 +178,7 @@ def run_synthetic_pipeline_batched(
 
         pk_counters.setdefault(tid, {})
         used_unique_values.setdefault(tid, {})
+        used_unique_tuples.setdefault(tid, {})
         table_unique_cols = unique_cols_map.get(tid, set())
 
         target_rows = (
@@ -196,16 +210,59 @@ def run_synthetic_pipeline_batched(
             for _ in range(this_batch):
                 row: Dict[str, Any] = {}
 
+                # Foreign keys
+                #
+                # Some tables have multiple FKs that share child columns
+                # (for example, org_cd appearing in more than one composite
+                # foreign key). If we naively assign FK values, a later FK
+                # can overwrite a child column that was already populated
+                # from a different parent, producing combinations that don't
+                # actually exist in any parent table and causing FK
+                # violations at insert time.
+                #
+                # To keep things generic and robust:
+                # - If a child column already has a value, we filter the
+                #   candidate parent rows so the referenced column matches
+                #   that value.
+                # - When applying an FK, we never overwrite an existing
+                #   child column; we only fill missing ones.
+                # - If no compatible parent exists for a given FK (i.e. no
+                #   parent row matches the already-populated child values),
+                #   we skip this synthetic row entirely instead of falling
+                #   back to an invalid combination that would break FKs.
+                valid_fk_combo = True
                 for fk in fk_constraints:
                     parent_tid = f"{fk['references']['schema']}.{fk['references']['table']}"
                     parent_rows = parent_rows_cache.get(parent_tid) or []
                     if not parent_rows:
                         continue
-                    parent_row = random.choice(parent_rows)
+
+                    candidates = parent_rows
                     for child_col, parent_col in zip(
                         fk["columns"], fk["references"]["columns"]
                     ):
+                        if child_col in row:
+                            candidates = [
+                                pr for pr in candidates if pr.get(parent_col) == row[child_col]
+                            ]
+                            if not candidates:
+                                break
+
+                    if not candidates:
+                        valid_fk_combo = False
+                        break
+
+                    parent_row = random.choice(candidates)
+
+                    for child_col, parent_col in zip(
+                        fk["columns"], fk["references"]["columns"]
+                    ):
+                        if child_col in row:
+                            continue
                         row[child_col] = parent_row[parent_col]
+
+                if not valid_fk_combo:
+                    continue
 
                 for col in cols:
                     cname = col["name"]
@@ -246,8 +303,9 @@ def run_synthetic_pipeline_batched(
                         if isinstance(max_l, int) and max_l > 0:
                             value = value[:max_l]
                         row[cname] = value
-                        used_for_table = used_unique_values[tid].setdefault(cname, set())
-                        used_for_table.add(value)
+                        if cname in table_unique_cols:
+                            used_for_table = used_unique_values[tid].setdefault(cname, set())
+                            used_for_table.add(value)
                         continue
 
                     # For FK columns, only use values copied from parents.
@@ -268,7 +326,8 @@ def run_synthetic_pipeline_batched(
                     value = _generate_scalar_value(col, stats=col_stats)
 
                     if cname in table_unique_cols:
-                        used_for_table = used_unique_values[tid].setdefault(cname, set())
+                        if cname in table_unique_cols:
+                            used_for_table = used_unique_values[tid].setdefault(cname, set())
                         attempts = 0
                         max_attempts = 10
                         while (value is None or value in used_for_table) and attempts < max_attempts:
@@ -295,6 +354,38 @@ def run_synthetic_pipeline_batched(
                         used_for_table.add(value)
 
                     row[cname] = value
+
+                # Enforce composite uniqueness (PK and UNIQUE constraints
+                # that span one or more columns) generically. This prevents
+                # duplicate tuples like (org_cd, proj_cd, prsn_cd) for
+                # ett_proj_team without hard-coding any table names.
+                tuple_defs = unique_tuple_constraints.get(tid, [])
+                if tuple_defs:
+                    ok = True
+                    for uc in tuple_defs:
+                        cols_tuple = uc.get("columns", [])
+                        key_name = uc.get("name") or ",".join(cols_tuple)
+                        values = tuple(row.get(c) for c in cols_tuple)
+                        # Only enforce when all columns are non-NULL
+                        if any(v is None for v in values):
+                            continue
+                        used_for_uc = used_unique_tuples[tid].setdefault(key_name, set())
+                        if values in used_for_uc:
+                            ok = False
+                            break
+                    if not ok:
+                        # Skip this row; it would violate a PK/UNIQUE tuple
+                        # we've already emitted for this table.
+                        continue
+                    # Record tuples now that the row is accepted
+                    for uc in tuple_defs:
+                        cols_tuple = uc.get("columns", [])
+                        key_name = uc.get("name") or ",".join(cols_tuple)
+                        values = tuple(row.get(c) for c in cols_tuple)
+                        if any(v is None for v in values):
+                            continue
+                        used_for_uc = used_unique_tuples[tid].setdefault(key_name, set())
+                        used_for_uc.add(values)
 
                 batch_rows.append(row)
 
@@ -361,6 +452,9 @@ def main() -> None:
     use_existing_data_profile_env = os.getenv("USE_EXISTING_DATA_PROFILE", "false").lower()
     use_existing_data_profile = use_existing_data_profile_env in ("1", "true", "yes")
 
+    validate_fk_env = os.getenv("VALIDATE_FK", "true").lower()
+    validate_fk = validate_fk_env in ("1", "true", "yes")
+
     sample_dir = os.getenv("SAMPLE_DIR") or None
     base_table_for_override = os.getenv("BASE_TABLE_FOR_SAMPLE_OVERRIDE") or None
 
@@ -381,7 +475,7 @@ def main() -> None:
         use_existing_data_profile=use_existing_data_profile,
         sample_dir=sample_dir,
         truncate_before_insert=True,
-        validate_fk=True,
+        validate_fk=validate_fk,
         seed=42,
         base_table_for_override=base_table_for_override,
     )

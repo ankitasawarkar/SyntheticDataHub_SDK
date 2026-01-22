@@ -200,6 +200,7 @@ def generate_synthetic_dataset(
     fk_map: Dict[str, List[Dict[str, Any]]] = {}
     cols_map: Dict[str, List[Dict[str, Any]]] = {}
     unique_cols_map: Dict[str, set] = {}
+    unique_tuple_constraints: Dict[str, List[Dict[str, Any]]] = {}
 
     for t in db_schema_list:
         tid = _table_id(t)
@@ -210,12 +211,24 @@ def generate_synthetic_dataset(
         fk_map[tid] = t["constraints"].get("foreign_keys", [])
         cols_map[tid] = t["columns"]
         unique_cols = set(pk_cols)
+
+        tuple_constraints: List[Dict[str, Any]] = []
+        for pk in t["constraints"].get("primary_keys", []):
+            cols_pk = list(pk.get("columns", []))
+            if cols_pk:
+                tuple_constraints.append({"name": pk.get("name") or "pk", "columns": cols_pk})
         for uq in t["constraints"].get("uniques", []):
-            for c in uq.get("columns", []):
+            cols_uq = list(uq.get("columns", []))
+            for c in cols_uq:
                 unique_cols.add(c)
+            if cols_uq:
+                tuple_constraints.append({"name": uq.get("name") or "uniq", "columns": cols_uq})
+
         unique_cols_map[tid] = unique_cols
+        unique_tuple_constraints[tid] = tuple_constraints
 
     used_unique_values: Dict[str, Dict[str, set]] = {}
+    used_unique_tuples: Dict[str, Dict[str, set]] = {}
 
     for t in ordered_tables:
         tid = _table_id(t)
@@ -223,6 +236,7 @@ def generate_synthetic_dataset(
         generated[tid] = table_rows
         pk_counters.setdefault(tid, {})
         used_unique_values.setdefault(tid, {})
+        used_unique_tuples.setdefault(tid, {})
         table_unique_cols = unique_cols_map.get(tid, set())
 
         n_rows = rows_per_table
@@ -237,16 +251,57 @@ def generate_synthetic_dataset(
             row: Dict[str, Any] = {}
 
             # Foreign keys
+            #
+            # IMPORTANT: Some tables have multiple FKs that share columns
+            # (e.g. org_cd participates in more than one composite FK).
+            # We must avoid overwriting an already-populated child column
+            # with a conflicting value from a different parent table.
+            #
+            # Strategy:
+            # - When a child column is already set, filter parent candidates
+            #   so the referenced column matches that value.
+            # - When applying the FK, never overwrite an existing child
+            #   column; only fill missing ones.
+            # - If no parent row is compatible with existing child values
+            #   for a given FK, we skip this synthetic row entirely rather
+            #   than emitting an FK-violating combination.
+            valid_fk_combo = True
             for fk in table_fk_constraints:
                 parent_tid = f"{fk['references']['schema']}.{fk['references']['table']}"
                 parent_rows = generated.get(parent_tid) or []
                 if not parent_rows:
                     continue
-                parent_row = random.choice(parent_rows)
+
+                candidates = parent_rows
                 for child_col, parent_col in zip(
                     fk["columns"], fk["references"]["columns"]
                 ):
+                    if child_col in row:
+                        candidates = [
+                            pr for pr in candidates if pr.get(parent_col) == row[child_col]
+                        ]
+                        if not candidates:
+                            break
+
+                if not candidates:
+                    # No consistent parent exists for this FK given the
+                    # already-populated child values. Skip this row and
+                    # try generating another one instead of falling back
+                    # to an arbitrary (and invalid) combination.
+                    valid_fk_combo = False
+                    break
+
+                parent_row = random.choice(candidates)
+
+                for child_col, parent_col in zip(
+                    fk["columns"], fk["references"]["columns"]
+                ):
+                    if child_col in row:
+                        continue
                     row[child_col] = parent_row[parent_col]
+
+            if not valid_fk_combo:
+                continue
 
             for col in table_cols:
                 cname = col["name"]
@@ -326,6 +381,33 @@ def generate_synthetic_dataset(
                     used_for_table.add(value)
 
                 row[cname] = value
+
+            # Enforce composite uniqueness (PK and UNIQUE constraints) so
+            # that tuples like (org_cd, proj_cd, prsn_cd) remain unique
+            # across the in-memory dataset.
+            tuple_defs = unique_tuple_constraints.get(tid, [])
+            if tuple_defs:
+                ok = True
+                for uc in tuple_defs:
+                    cols_tuple = uc.get("columns", [])
+                    key_name = uc.get("name") or ",".join(cols_tuple)
+                    vals = tuple(row.get(c) for c in cols_tuple)
+                    if any(v is None for v in vals):
+                        continue
+                    used_for_uc = used_unique_tuples[tid].setdefault(key_name, set())
+                    if vals in used_for_uc:
+                        ok = False
+                        break
+                if not ok:
+                    continue
+                for uc in tuple_defs:
+                    cols_tuple = uc.get("columns", [])
+                    key_name = uc.get("name") or ",".join(cols_tuple)
+                    vals = tuple(row.get(c) for c in cols_tuple)
+                    if any(v is None for v in vals):
+                        continue
+                    used_for_uc = used_unique_tuples[tid].setdefault(key_name, set())
+                    used_for_uc.add(vals)
 
             table_rows.append(row)
 

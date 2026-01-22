@@ -8,6 +8,8 @@
 # Keep source code (entire src tree)
 !/src/
 !/src/**
+!/notebooks/
+!/notebooks/**
 !/requirements.txt
 !/Dockerfile    
 !/docker-compose.yml
