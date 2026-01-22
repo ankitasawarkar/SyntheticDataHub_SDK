@@ -29,32 +29,57 @@ This project generates realistic synthetic data for finance and dealer schemas u
 Single `.env` file with comment/uncomment profiles, for example:
 
 ```env
-# ===== finance profile (ACTIVE) =====
-DB_CONFIG=postgresql+psycopg2://postgres:postgres@localhost:5432/jdf
-SAMPLE_DIR=sample_data
-BASE_TABLE_FOR_SAMPLE_OVERRIDE=customer
+# ===== example ETT profile (ACTIVE) =====
+
+# Core connection info used by src.synthetic_pipeline.pipeline.main
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=ett
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Optional: generic SQLAlchemy URL (used by db.py when present).
+# If set, this overrides the host/port/name/user/password above.
+DB_CONFIG=postgresql+psycopg2://postgres:postgres@localhost:5432/ett
+
+# Folder with sample CSVs for this schema
+SAMPLE_DIR=ett
+
+# Base table whose CSV row count drives proportional scaling
+BASE_TABLE_FOR_SAMPLE_OVERRIDE=ett_project
+
+# Target rows for the base table; other tables scale from CSV ratios
 TARGET_ROWS_PER_TABLE=100000
-BATCH_SIZE=20000
+
+# Rows per insert batch (higher = faster but more memory)
+BATCH_SIZE=50000
+
+# If true: also profile existing rows already in the DB tables.
+# For CSV-only profiling, keep this false and rely on SAMPLE_DIR above.
 USE_EXISTING_DATA_PROFILE=false
 
-# ===== dealer profile (INACTIVE) =====
-# DB_CONFIG=postgresql+psycopg2://postgres:postgres@localhost:5432/dealer_db
-# SAMPLE_DIR=dealer_db
-# BASE_TABLE_FOR_SAMPLE_OVERRIDE=dealer
-# TARGET_ROWS_PER_TABLE=200000
-# BATCH_SIZE=20000
-# USE_EXISTING_DATA_PROFILE=false
+# If true: after insert, run extra queries to report FK violations.
+# Turning this off speeds up runs; the database still enforces FK constraints.
+VALIDATE_FK=true
+
+# If true: do NOT truncate; append after existing max PK values.
+# If false: truncate all user tables before inserting synthetic data.
+APPEND_MODE=false
 ```
 
 Key variables:
-- `DB_CONFIG` – full SQLAlchemy URL (driver + user + password + host + db).
-- `SAMPLE_DIR` – folder with CSVs for the active schema (`sample_data` or `dealer_db`).
-- `BASE_TABLE_FOR_SAMPLE_OVERRIDE` – base table name (e.g. `customer` / `dealer`) that **has a CSV**; other tables scale from its row count.
-- `TARGET_ROWS_PER_TABLE` – target rows for the base table; others are scaled from CSV ratios.
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` – basic Postgres connection settings used by the pipeline entrypoint.
+- `DB_CONFIG` – full SQLAlchemy URL; if set, it overrides the basic connection settings and is used everywhere.
+- `SAMPLE_DIR` – folder with CSVs for the active schema (e.g. `sample_data`, `dealer_db`, `ett`).
+- `BASE_TABLE_FOR_SAMPLE_OVERRIDE` – base table name (e.g. `customer`, `dealer`, `ett_project`) that **has a CSV**; other tables scale from its row count.
+- `TARGET_ROWS_PER_TABLE` – target rows for the base table; others are scaled from CSV ratios when overrides are enabled.
 - `BATCH_SIZE` – number of rows inserted per batch (higher = faster but more memory).
 - `USE_EXISTING_DATA_PROFILE` – `true`/`false`; profile live DB data when `true` (slower but more realistic).
+- `VALIDATE_FK` – `true`/`false`; run an extra FK validation query after inserts.
+- `APPEND_MODE` – `true`/`false`; append to existing data instead of truncating tables first.
 
-To switch between finance and dealer, just comment/uncomment the relevant block and keep only one active profile.
+To switch between schemas (finance / dealer / ett), create one block per schema
+and keep only one profile uncommented at a time.
 
 ## Sample CSV Placement
 
@@ -102,9 +127,9 @@ Example observed performance on a finance workload:
 
 | Workload              | TARGET_ROWS_PER_TABLE | BATCH_SIZE | Time (seconds) | Time (minutes, approx.) |
 |-----------------------|-----------------------|------------|----------------|--------------------------|
-| finance (src, jdf)       | 100000                | 20000      | 1353.29        | 22.6 (~23)               |
-| finance (notebook)    | 100000                | 20000      | –              | ~19                      |
+| finance (src, jdf)    | 100000                | 20000      | 1353.29        | 22.6 (~23)               |
 | finance (src, jdf)    | 100000                | 20000      | 545.73         | 9.1                      |
+| finance (src, jdf)    | 100000                | 50000      | 1049.31        | 17.5                     |
 | dealer (src, dealer ) | 100000                | 20000      | 328.69         | 5.5                      |
 
 Actual performance will vary with hardware, network latency to PostgreSQL, and whether `USE_EXISTING_DATA_PROFILE` is enabled.
@@ -115,6 +140,14 @@ For faster large runs (e.g. ~1M rows in the base table):
 - Keep `USE_EXISTING_DATA_PROFILE=false` to avoid extra DB scans.
 
 -------------------------------------
+### Finance schema detailed 100k/50k run
+
+For `TARGET_ROWS_PER_TABLE=100000` and `BATCH_SIZE=50000`, the final row counts were:
+`{'public.Branch': 19192, 'public.Customer': 100000, 'public.Merchant': 100000, 'public.Account': 302020, 'public.Card': 403030, 'public.Loan': 79798, 'public.Transaction': 504040, 'public.LoanPayment': 302020}` with `FK violations: {}` and `Pipeline execution time: 1049.31 seconds`.
+
+-------------------------------------
+### Dealer schema performance 
+
 DB_CONFIG=postgresql+psycopg2://postgres:postgres@localhost:5432/dealer
 SAMPLE_DIR=dealer_db
 BASE_TABLE_FOR_SAMPLE_OVERRIDE=dealer
@@ -124,3 +157,20 @@ USE_EXISTING_DATA_PROFILE=false
 Row counts per table: {'public.dealer': 1000000, 'public.dealer_contract': 1000000, 'public.dealer_order': 2020408, 'public.dealer_region': 1000000, 'public.manufacturer': 1000000, 'public.product': 2020408}
 FK violations: {}
 Pipeline execution time: 4475.07 seconds = 01:14:35hr
+
+### ETT schema performance (CSV-based, FK validation on)
+
+Using ETT CSVs with `BASE_TABLE_FOR_SAMPLE_OVERRIDE=ett_project` and FK validation enabled:
+
+| Workload       | TARGET_ROWS | BATCH_SIZE | BASE_TABLE_FOR_SAMPLE_OVERRIDE | FK validation | Time        |
+|----------------|------------|-----------|---------------------------------|---------------|------------|
+| ett (CSV, ETT) | 50000     | 100000    | ett_project                     | on            | 18.30 min   |
+| ett (CSV, ETT) | 100000     | 50000     | ett_project                     | on            | 3.82 min    |
+| ett (CSV, ETT) | 10000      | 5000      | ett_project                     | on            | 1.21 min    |
+| ett (CSV, ETT) | 1000       | 500       | ett_project                     | on            | 7.71 sec    |
+
+For the 500k run, the final row counts were:
+`{'public.ett_org': 31250, 'public.ett_customer': 500000, 'public.ett_location': 62500, 'public.ett_project': 500000, 'public.ett_person': 93750, 'public.ett_task': 500000, 'public.ett_proj_team': 71034, 'public.ett_proj_timelog': 19657}` with `FK violations: {}` and `Pipeline execution time: 1098.08 seconds`.
+
+For the 100k run, the final row counts were:
+`{'public.ett_org': 6250, 'public.ett_customer': 100000, 'public.ett_location': 12500, 'public.ett_project': 100000, 'public.ett_person': 18750, 'public.ett_task': 100000, 'public.ett_proj_team': 14206, 'public.ett_proj_timelog': 4060}` with `FK violations: {}`.

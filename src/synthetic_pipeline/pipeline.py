@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
 
-from .db import DBConfig
+from .db import DBConfig, get_connection
 from .schema import fetch_db_schema
 from .profiling import profile_existing_data, profile_sample_data
 from .ordering import truncate_all_synthetic_tables, plan_table_order
@@ -9,6 +9,118 @@ from .insert import insert_synthetic_dataset
 from .validation import validate_referential_integrity
 from .overrides import build_rows_per_table_override_from_sample
 import time
+import re
+
+
+def _build_profiles(
+    config: DBConfig,
+    db_schema_list: List[Dict[str, Any]],
+    use_existing_data_profile: bool = False,
+    sample_dir: Optional[str] = None,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Build column profiles from existing DB data and/or sample CSVs.
+
+    This wraps profile_existing_data and profile_sample_data so pipeline
+    entrypoints have a single place to maintain profiling logic.
+    """
+    profiles: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    if use_existing_data_profile:
+        existing_stats = profile_existing_data(config, db_schema_list)
+        for tid, cols in existing_stats.items():
+            profiles.setdefault(tid, {}).update(cols)
+
+    if sample_dir is not None:
+        sample_stats = profile_sample_data(db_schema_list, sample_dir=sample_dir)
+        for tid, cols in sample_stats.items():
+            profiles.setdefault(tid, {}).update(cols)
+
+    return profiles
+
+
+def _bootstrap_pk_counters_for_append(
+    config: DBConfig,
+    db_schema_list: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, int]]:
+    """Inspect existing data to initialize PK counters for append mode.
+
+    For each table and PK column, this looks at the current maximum value
+    in the database and returns counters so the generator will continue
+    from max+1, avoiding collisions when we do not truncate first.
+
+    Supports:
+    - Integer-like PKs (smallint / int / bigint)
+    - Text/varchar PKs that end with a numeric suffix, e.g. COL_000123
+    """
+    pk_counters: Dict[str, Dict[str, int]] = {}
+
+    with get_connection(config) as conn:
+        cur = conn.cursor()
+        for t in db_schema_list:
+            tid = _table_id(t)
+            table_pk: Dict[str, int] = {}
+
+            pk_constraints = t["constraints"].get("primary_keys", [])
+            if not pk_constraints:
+                continue
+
+            for pk in pk_constraints:
+                for cname in pk.get("columns", []):
+                    col_meta = next(
+                        (c for c in t["columns"] if c["name"] == cname),
+                        None,
+                    )
+                    if not col_meta:
+                        continue
+
+                    data_type = (col_meta.get("data_type") or "").lower()
+                    udt_name = (col_meta.get("udt_name") or "").lower()
+                    full_col = f'"{t["schema"]}"."{t["table"]}"."{cname}"'
+                    sql = (
+                        f"SELECT MAX({full_col}) AS max_val "
+                        f"FROM \"{t['schema']}\".\"{t['table']}\""
+                    )
+
+                    try:
+                        cur.execute(sql)
+                        r = cur.fetchone() or {}
+                    except Exception:
+                        continue
+
+                    max_val = r.get("max_val")
+                    if max_val is None:
+                        continue
+
+                    # Integer-like PKs: use max_int directly.
+                    if data_type in ("integer", "bigint", "smallint") or udt_name in (
+                        "int2",
+                        "int4",
+                        "int8",
+                    ):
+                        try:
+                            table_pk[cname] = int(max_val)
+                        except (TypeError, ValueError):
+                            pass
+                        continue
+
+                    # Text/varchar PKs: if they end with digits, treat the
+                    # trailing number as a counter (e.g. COL_000123).
+                    if (
+                        "char" in data_type
+                        or "text" in data_type
+                        or udt_name == "text"
+                    ):
+                        m = re.search(r"(\d+)$", str(max_val))
+                        if m:
+                            try:
+                                table_pk[cname] = int(m.group(1))
+                            except ValueError:
+                                pass
+
+            if table_pk:
+                pk_counters[tid] = table_pk
+
+    return pk_counters
 
 def run_synthetic_pipeline(
     config: DBConfig,
@@ -31,16 +143,12 @@ def run_synthetic_pipeline(
     """
     db_schema_list = fetch_db_schema(config)
 
-    profiles: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    if use_existing_data_profile:
-        existing_stats = profile_existing_data(config, db_schema_list)
-        for tid, cols in existing_stats.items():
-            profiles.setdefault(tid, {}).update(cols)
-
-    if sample_dir is not None:
-        sample_stats = profile_sample_data(db_schema_list, sample_dir=sample_dir)
-        for tid, cols in sample_stats.items():
-            profiles.setdefault(tid, {}).update(cols)
+    profiles = _build_profiles(
+        config=config,
+        db_schema_list=db_schema_list,
+        use_existing_data_profile=use_existing_data_profile,
+        sample_dir=sample_dir,
+    )
 
     if truncate_before_insert:
         truncate_all_synthetic_tables(config, db_schema_list)
@@ -78,6 +186,7 @@ def run_synthetic_pipeline_batched(
     validate_fk: bool = True,
     seed: Optional[int] = None,
     base_table_for_override: Optional[str] = None,
+    append_mode: bool = False,
 ) -> Dict[str, Any]:
     """Batched version of the pipeline: generates and inserts in chunks.
 
@@ -94,16 +203,19 @@ def run_synthetic_pipeline_batched(
     db_schema_list = fetch_db_schema(config)
     ordered_tables = plan_table_order(db_schema_list)
 
-    profiles: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    if use_existing_data_profile:
-        existing_stats = profile_existing_data(config, db_schema_list)
-        for tid, cols in existing_stats.items():
-            profiles.setdefault(tid, {}).update(cols)
+    # Log the FK-safe table order once so it's clear which table is
+    # treated as the root and how children follow their parents.
+    ordered_ids = [
+        _table_id(t) for t in ordered_tables
+    ]
+    print("[pipeline] FK-safe table order:", ", ".join(ordered_ids))
 
-    if sample_dir is not None:
-        sample_stats = profile_sample_data(db_schema_list, sample_dir=sample_dir)
-        for tid, cols in sample_stats.items():
-            profiles.setdefault(tid, {}).update(cols)
+    profiles = _build_profiles(
+        config=config,
+        db_schema_list=db_schema_list,
+        use_existing_data_profile=use_existing_data_profile,
+        sample_dir=sample_dir,
+    )
 
     # Optionally derive per-table row targets from sample CSVs if requested.
     if (
@@ -133,7 +245,16 @@ def run_synthetic_pipeline_batched(
 
     accumulated_counts: Dict[str, int] = {}
     parent_rows_cache: Dict[str, List[Dict[str, Any]]] = {}
-    pk_counters: Dict[str, Dict[str, int]] = {}
+
+    # In truncate mode we start PK counters from zero. In append mode we
+    # inspect existing data and start counters at the current max so we
+    # can safely append rows without clashing with existing PKs.
+    if append_mode:
+        pk_counters: Dict[str, Dict[str, int]] = _bootstrap_pk_counters_for_append(
+            config, db_schema_list
+        )
+    else:
+        pk_counters: Dict[str, Dict[str, int]] = {}
 
     # Track which columns must be unique (PK + UNIQUE constraints) per table,
     # and the set of values already used for those columns across all batches.
@@ -141,28 +262,46 @@ def run_synthetic_pipeline_batched(
     unique_tuple_constraints: Dict[str, List[Dict[str, Any]]] = {}
     for _t in db_schema_list:
         _tid = _table_id(_t)
-        _pk_cols: List[str] = []
-        for _pk in _t["constraints"].get("primary_keys", []):
-            _pk_cols.extend(_pk["columns"])
-        _unique_cols = set(_pk_cols)
+
+        # Only enforce per-column uniqueness for *single-column* PK/UNIQUE
+        # constraints. Composite keys are enforced via tuple constraints;
+        # treating each column as unique would incorrectly over-constrain
+        # things like date fields that are only unique in combination.
+        _unique_cols: set = set()
 
         tuple_constraints: List[Dict[str, Any]] = []
         for _pk in _t["constraints"].get("primary_keys", []):
             cols = list(_pk.get("columns", []))
             if cols:
                 tuple_constraints.append({"name": _pk.get("name") or "pk", "columns": cols})
+                if len(cols) == 1:
+                    _unique_cols.add(cols[0])
         for _uq in _t["constraints"].get("uniques", []):
             cols = list(_uq.get("columns", []))
-            for _c in cols:
-                _unique_cols.add(_c)
             if cols:
                 tuple_constraints.append({"name": _uq.get("name") or "uniq", "columns": cols})
+                if len(cols) == 1:
+                    _unique_cols.add(cols[0])
 
         unique_cols_map[_tid] = _unique_cols
         unique_tuple_constraints[_tid] = tuple_constraints
 
     used_unique_values: Dict[str, Dict[str, set]] = {}
     used_unique_tuples: Dict[str, Dict[str, set]] = {}
+
+    # Precompute which parent columns are referenced by any FK so we can
+    # build value -> rows indexes for fast lookup in the hot path. This
+    # stays fully generic: it is driven only by FK metadata, not table
+    # names.
+    parent_index_cols: Dict[str, set] = {}
+    for t in db_schema_list:
+        for fk in t["constraints"].get("foreign_keys", []):
+            parent_tid = f"{fk['references']['schema']}.{fk['references']['table']}"
+            for parent_col in fk["references"]["columns"]:
+                parent_index_cols.setdefault(parent_tid, set()).add(parent_col)
+
+    # parent_tid -> parent_col -> value -> [parent_row, ...]
+    parent_indexes: Dict[str, Dict[str, Dict[Any, List[Dict[str, Any]]]]] = {}
 
     from .generator import _generate_scalar_value
 
@@ -237,16 +376,35 @@ def run_synthetic_pipeline_batched(
                     if not parent_rows:
                         continue
 
-                    candidates = parent_rows
+                    # Use prebuilt parent_indexes whenever a child column
+                    # is already set so we avoid scanning all parent rows.
+                    table_indexes = parent_indexes.get(parent_tid, {})
+                    candidates: Optional[List[Dict[str, Any]]] = None
+
                     for child_col, parent_col in zip(
                         fk["columns"], fk["references"]["columns"]
                     ):
                         if child_col in row:
-                            candidates = [
-                                pr for pr in candidates if pr.get(parent_col) == row[child_col]
-                            ]
-                            if not candidates:
+                            val = row[child_col]
+                            idx_for_col = table_indexes.get(parent_col)
+                            if idx_for_col is not None:
+                                # Fast path: direct dictionary lookup
+                                c = idx_for_col.get(val, [])
+                            else:
+                                # Fallback: filter existing candidates (or all parents)
+                                base = candidates if candidates is not None else parent_rows
+                                c = [pr for pr in base if pr.get(parent_col) == val]
+
+                            if not c:
+                                candidates = []
                                 break
+
+                            candidates = c
+
+                    # If no child column constrained this FK, fall back to
+                    # using all parent rows as candidates.
+                    if candidates is None:
+                        candidates = parent_rows
 
                     if not candidates:
                         valid_fk_combo = False
@@ -303,9 +461,6 @@ def run_synthetic_pipeline_batched(
                         if isinstance(max_l, int) and max_l > 0:
                             value = value[:max_l]
                         row[cname] = value
-                        if cname in table_unique_cols:
-                            used_for_table = used_unique_values[tid].setdefault(cname, set())
-                            used_for_table.add(value)
                         continue
 
                     # For FK columns, only use values copied from parents.
@@ -325,9 +480,8 @@ def run_synthetic_pipeline_batched(
 
                     value = _generate_scalar_value(col, stats=col_stats)
 
-                    if cname in table_unique_cols:
-                        if cname in table_unique_cols:
-                            used_for_table = used_unique_values[tid].setdefault(cname, set())
+                    if cname in table_unique_cols and cname not in pk_cols:
+                        used_for_table = used_unique_values[tid].setdefault(cname, set())
                         attempts = 0
                         max_attempts = 10
                         while (value is None or value in used_for_table) and attempts < max_attempts:
@@ -393,7 +547,20 @@ def run_synthetic_pipeline_batched(
             _insert(config, [t], synthetic_data_single, batch_size=batch_size)
             accumulated_counts[tid] += len(batch_rows)
 
-            parent_rows_cache[tid] = parent_rows_cache.get(tid, []) + batch_rows
+            parent_rows = parent_rows_cache.get(tid, []) + batch_rows
+            parent_rows_cache[tid] = parent_rows
+
+            # Rebuild value indexes for this parent table so subsequent
+            # child tables can do O(1) lookups by referenced column value
+            # instead of scanning all parent rows.
+            index_cols = parent_index_cols.get(tid)
+            if index_cols:
+                table_index: Dict[str, Dict[Any, List[Dict[str, Any]]]] = {}
+                for pr in parent_rows:
+                    for col_name in index_cols:
+                        val = pr.get(col_name)
+                        table_index.setdefault(col_name, {}).setdefault(val, []).append(pr)
+                parent_indexes[tid] = table_index
 
             print(
                 f"[pipeline] Table {tid}: batch inserted {len(batch_rows)} rows, "
@@ -428,6 +595,7 @@ def main() -> None:
     - BATCH_SIZE (default: "20000")
     - USE_EXISTING_DATA_PROFILE ("true"/"false", default: "false")
     - SAMPLE_DIR (path to folder with sample CSVs, optional)
+    - APPEND_MODE ("true"/"false", default: "false")
     """
     import os
 
@@ -455,6 +623,9 @@ def main() -> None:
     validate_fk_env = os.getenv("VALIDATE_FK", "true").lower()
     validate_fk = validate_fk_env in ("1", "true", "yes")
 
+    append_mode_env = os.getenv("APPEND_MODE", "false").lower()
+    append_mode = append_mode_env in ("1", "true", "yes")
+
     sample_dir = os.getenv("SAMPLE_DIR") or None
     base_table_for_override = os.getenv("BASE_TABLE_FOR_SAMPLE_OVERRIDE") or None
 
@@ -474,10 +645,11 @@ def main() -> None:
         batch_size=batch_size,
         use_existing_data_profile=use_existing_data_profile,
         sample_dir=sample_dir,
-        truncate_before_insert=True,
+        truncate_before_insert=not append_mode,
         validate_fk=validate_fk,
         seed=42,
         base_table_for_override=base_table_for_override,
+        append_mode=append_mode,
     )
 
     print("Synthetic data generation completed.")

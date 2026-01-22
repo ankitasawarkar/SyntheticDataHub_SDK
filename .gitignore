@@ -8,8 +8,18 @@
 # Keep source code (entire src tree)
 !/src/
 !/src/**
-!/notebooks/
-!/notebooks/**
+
+# Keep notebooks (folder is named `notebook` in this repo)
+!/notebook/
+!/notebook/**
+
+# Keep sample/data folders
+!/finance/
+!/finance/**
+!/ett/
+!/ett/**
+
+# Keep key project files
 !/requirements.txt
 !/Dockerfile    
 !/docker-compose.yml
@@ -19,3 +29,7 @@
 # Keep key notebooks at repo root
 !/synthetic_data_with_sample_data.ipynb
 !/synthetic_postgress.ipynb
+
+# Always ignore Python cache/compiled artifacts
+**/__pycache__/
+*.py[cod]

@@ -210,19 +210,27 @@ def generate_synthetic_dataset(
         pk_cols_map[tid] = pk_cols
         fk_map[tid] = t["constraints"].get("foreign_keys", [])
         cols_map[tid] = t["columns"]
-        unique_cols = set(pk_cols)
+
+        # Only enforce per-column uniqueness for *single-column* PK/UNIQUE
+        # constraints. Composite keys are enforced via tuple constraints
+        # below; their individual columns (e.g. clock_dt) do not need
+        # independent scalar uniqueness, which avoids over-constraining
+        # date/time columns and similar.
+        unique_cols: set = set()
 
         tuple_constraints: List[Dict[str, Any]] = []
         for pk in t["constraints"].get("primary_keys", []):
             cols_pk = list(pk.get("columns", []))
             if cols_pk:
                 tuple_constraints.append({"name": pk.get("name") or "pk", "columns": cols_pk})
+                if len(cols_pk) == 1:
+                    unique_cols.add(cols_pk[0])
         for uq in t["constraints"].get("uniques", []):
             cols_uq = list(uq.get("columns", []))
-            for c in cols_uq:
-                unique_cols.add(c)
             if cols_uq:
                 tuple_constraints.append({"name": uq.get("name") or "uniq", "columns": cols_uq})
+                if len(cols_uq) == 1:
+                    unique_cols.add(cols_uq[0])
 
         unique_cols_map[tid] = unique_cols
         unique_tuple_constraints[tid] = tuple_constraints
@@ -321,9 +329,6 @@ def generate_synthetic_dataset(
                     c = pk_counters[tid].get(cname, 0) + 1
                     pk_counters[tid][cname] = c
                     row[cname] = c
-                    if cname in table_unique_cols:
-                        used_for_table = used_unique_values[tid].setdefault(cname, set())
-                        used_for_table.add(c)
                     continue
 
                 # Text/varchar primary-key columns: generate a deterministic
@@ -343,8 +348,6 @@ def generate_synthetic_dataset(
                     if isinstance(max_l, int) and max_l > 0:
                         value = value[:max_l]
                     row[cname] = value
-                    used_for_table = used_unique_values[tid].setdefault(cname, set())
-                    used_for_table.add(value)
                     continue
 
                 col_stats = None
@@ -353,7 +356,7 @@ def generate_synthetic_dataset(
 
                 value = _generate_scalar_value(col, stats=col_stats)
 
-                if cname in table_unique_cols:
+                if cname in table_unique_cols and cname not in table_pk_cols:
                     used_for_table = used_unique_values[tid].setdefault(cname, set())
                     attempts = 0
                     max_attempts = 10
