@@ -116,6 +116,13 @@ def _generate_scalar_value(col: Dict[str, Any], stats: Optional[Dict[str, Any]] 
     if "postcode" in name or "zipcode" in name or "zip" == name:
         return fake.postcode()
 
+    # Network / IP address types (e.g. PostgreSQL inet)
+    # Only treat real inet-typed columns as IPs; do NOT rely on
+    # the column name (to avoid catching names like "interest_rate").
+    if data_type == "inet" or udt_name == "inet":
+        # Prefer IPv4 for simplicity; inet accepts both v4 and v6.
+        return fake.ipv4()
+
     # Date / time
     if "timestamp" in data_type or "timestamp" in udt_name:
         return fake.date_time_between(start_date="-5y", end_date="now")

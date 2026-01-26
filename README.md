@@ -14,8 +14,8 @@ This project generates realistic synthetic data for finance and dealer schemas u
   - `insert.py` – batch inserts into PostgreSQL.
   - `validation.py` – FK referential-integrity checks.
   - `pipeline.py` – batched end-to-end pipeline entrypoint.
-- `synthetic_data_with_sample_rows copy.ipynb` – notebook version of the same pipeline logic for interactive runs and exploration.
-- `sample_data/` – finance sample CSVs (e.g. `Customer.csv`, `Branch.csv`, etc.).
+- `notebook/synthetic_data_with_sample_data.ipynb` – notebook version of the same pipeline logic for interactive runs and exploration.
+- `finance/` – finance sample CSVs (e.g. `customer.csv`, `branch.csv`, etc.).
 - `dealer_db/` – dealer sample CSVs.
 
 ## Prerequisites
@@ -83,12 +83,13 @@ and keep only one profile uncommented at a time.
 
 ## Sample CSV Placement
 
-- Place finance CSVs under `sample_data/` with filenames matching table names, e.g.:
-  - `sample_data/Customer.csv`
-  - `sample_data/Branch.csv`
-  - `sample_data/Account.csv`
+- Place finance CSVs under `finance/` with filenames matching table names, e.g.:
+  - `finance/customer.csv`
+  - `finance/branch.csv`
+  - `finance/account.csv`
   - etc.
 - Place dealer CSVs under `dealer_db/` with the same convention, e.g. `dealer_db/dealer.csv`, `dealer_db/product.csv`.
+- Place ETT CSVs under `ett/`, e.g. `ett/ett_project.csv`, `ett/ett_task.csv`, etc.
 - The pipeline automatically detects `<table>.csv` for each table in the schema and uses their row counts and value distributions.
 
 ## Running the Pipeline (src)

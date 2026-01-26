@@ -1,4 +1,0 @@
-org_cd,prsn_cd,email,first_nm,last_nm,disp_name,email_alt,phone_cell,phone_land,phone_alt,loc_cd,locale,timezone,status,crt_by_user,upd_by_user,crt_by_ts,upd_by_ts,role
-"QUADYSTER","rahmed","rahmed@quadyster.com","Riju Ara","Ahmed","Riju Ara","","724-594-3693","","","BETTENDORF","en-US","America/Chicago","ACTIVE","cblrao","tsoankamble","2021-08-03 10:58:05","2025-11-05 18:29:49","user"
-"QUADYSTER","sdola","sdola@quadyster.com","Sheeba","Dola","Sheeba","","+1 480 791 8409","","","BETTENDORF","en-US","America/Chicago","ACTIVE","bninan","tsoankamble","2023-01-09 03:35:27","2025-11-07 17:43:39","user"
-"QUADYSTER","sputrevu","sputrevu@quadyster.com","Suvankar","Putrevu","Suvankar","","+13865062182","","","BETTENDORF","en-US","America/Chicago","ACTIVE","bninan","tsoankamble","2022-11-07 14:04:48","2025-11-07 17:42:51","user"

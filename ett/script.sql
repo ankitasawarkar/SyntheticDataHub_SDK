@@ -219,5 +219,11 @@ CREATE TABLE
 -- drop table if exists ett_location cascade;
 -- drop table if exists ett_person cascade;
 -- drop table if exists ett_org cascade;
-    
-    
+
+SELECT COUNT(*) FROM ett_org;
+SELECT COUNT(*) FROM ett_customer;
+SELECT COUNT(*) FROM ett_project;
+SELECT COUNT(*) FROM ett_person;
+SELECT COUNT(*) FROM ett_task;
+SELECT COUNT(*) FROM ett_proj_team;
+SELECT COUNT(*) FROM ett_proj_timelog;
