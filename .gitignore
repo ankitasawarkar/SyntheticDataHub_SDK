@@ -32,7 +32,7 @@
 # Keep key notebooks at repo root
 !/synthetic_data_with_sample_data.ipynb
 !/synthetic_postgress.ipynb
-!/ett/*.csv
+
 # Always ignore Python cache/compiled artifacts
 **/__pycache__/
 *.py[cod]
